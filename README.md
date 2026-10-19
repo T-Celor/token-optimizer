@@ -1,433 +1,428 @@
-# Token Optimization Stack for AI Coding Agents
+<div align="center">
 
-> **RTK + Caveman + Headroom** — Cut 50–90 % of tokens across Claude Code, GitHub Copilot CLI and other agents, without losing answer quality.
+# Token Optimization Stack
 
-Clone this repo, run the installer, run the benchmark, launch your agent.  
-Everything you need is inside.
+**Use less of your Claude Code usage. Measured, not promised.**
 
-Primary targets: **Claude Code** (Anthropic subscription or API) and **GitHub Copilot CLI**.  
-Also works with Cursor, Codex, Gemini CLI, Aider, OpenCode and any OpenAI-compatible client.
+RTK + Ponytail + Headroom · one installer · one launcher · the benchmark that proves it
 
----
+| −25% cost | −38% tokens | −34% peak context | 15/15 answers right |
+|:-:|:-:|:-:|:-:|
 
-## Table of Contents
+<sub>Average of 3 real Claude Code work sessions against plain Claude Code (Claude Opus 5.5). Details in <a href="RESULTS.md">RESULTS.md</a>.</sub>
 
-1. [One-command setup](#one-command-setup)
-2. [Benchmark (with vs without)](#benchmark-with-vs-without)
-3. [The Three Tools](#the-three-tools)
-4. [How They Work Together](#how-they-work-together)
-5. [Supported Agents & Providers](#supported-agents--providers)
-6. [Quick Start – Claude Code](#quick-start--claude-code)
-7. [Quick Start – GitHub Copilot CLI](#quick-start--github-copilot-cli)
-8. [TypeScript / JavaScript SDK](#typescript--javascript-sdk)
-9. [Direct API Usage](#direct-api-usage)
-10. [Verification & Monitoring](#verification--monitoring)
-11. [Troubleshooting](#troubleshooting)
-12. [Licence & Credits](#licence--credits)
+</div>
 
 ---
 
-## One-command setup
+## Contents
+
+- [Quick start](#-quick-start)
+- [Results at a glance](#-results-at-a-glance)
+- [What's in the stack](#-whats-in-the-stack)
+- [How it works](#-how-it-works)
+- [Daily use](#-daily-use)
+- [Installation](#-installation)
+- [Benchmark](#-benchmark)
+- [Privacy and data](#-privacy-and-data)
+- [Other agents and SDKs](#-other-agents-and-sdks)
+- [Monitoring and troubleshooting](#-monitoring-and-troubleshooting)
+- [Repository layout](#-repository-layout)
+- [Credits and licence](#-credits-and-licence)
+
+---
+
+## ⚡ Quick start
 
 ```bash
-git clone <this-repo-url> token-opt-stack
-cd token-opt-stack
+git clone <this-repo-url> token-optimizer
+cd token-optimizer
+./install.sh           # as your normal user; it asks for sudo when it needs it
+token-stack claude     # use this instead of `claude`
+```
 
-chmod +x install.sh scripts/*.sh
+That's it. RTK and Ponytail now work in every Claude Code session, and `token-stack claude`
+routes Claude Code through Headroom (which keeps running in the background until
+`token-stack stop`).
+
+---
+
+## 📊 Results at a glance
+
+Cost of one 7-request work session, per configuration (one block ≈ $0.02):
+
+```
+RTK + Ponytail + Headroom      ███████████████        $0.297   −25%   ◀ default install
+RTK + Headroom                 ███████████████        $0.309   −22%
+Headroom                       ████████████████       $0.310   −21%
+Headroom → pxpipe              ████████████████       $0.311   −21%
+RTK + Ponytail + Headroom
+  → pxpipe                     ██████████████████     $0.358    −9%   ◀ smallest context (−53%)
+Plain Claude Code              ████████████████████   $0.395           ◀ baseline
+code-review-graph              ██████████████████████ $0.435   +10%
+RTK + Caveman + Ponytail       ██████████████████████ $0.444   +12%
+All six tools                  █████████████████████████████  $0.584  +48%
+```
+
+- **Headroom does most of the work.** RTK and Ponytail add a little on top.
+- **pxpipe after Headroom halves the context but costs more.** It removes cheap tokens and
+  adds expensive ones; use it only for very long sessions.
+- **Caveman and code-review-graph made sessions more expensive**, and stacking every tool
+  was the worst option of all.
+- **Accuracy never dropped**: every graded answer was right in every configuration.
+
+<details>
+<summary><b>Full results table</b></summary>
+
+| Configuration | Sessions | Cost | Tokens | Peak context | Correct |
+|---|---:|---:|---:|---:|:-:|
+| **RTK + Ponytail + Headroom** | 3 | **−24.9%** | −37.7% | −33.6% | 15/15 |
+| RTK + Headroom | 3 | −21.8% | −35.8% | −33.4% | 15/15 |
+| Headroom | 3 | −21.4% | −39.9% | −35.2% | 15/15 |
+| Headroom → pxpipe | 2 | −21.3% | −47.7% | −40.9% | 10/10 |
+| RTK + Ponytail + Headroom → pxpipe | 2 | −9.3% | −47.3% | **−53.2%** | 10/10 |
+| RTK + Headroom → pxpipe | 2 | −8.0% | −39.7% | −39.8% | 10/10 |
+| RTK | 1 | −9.4% | −14.8% | −4.6% | 5/5 |
+| pxpipe | 1 | −7.0% | −34.3% | −23.3% | 5/5 |
+| Caveman | 1 | −2.2% | +8.5% | +2.0% | 5/5 |
+| Ponytail | 1 | −2.1% | −7.4% | −1.9% | 5/5 |
+| code-review-graph | 1 | +10.2% | +10.3% | +6.5% | 5/5 |
+| RTK + Caveman + Ponytail | 1 | +12.5% | +24.1% | +12.6% | 5/5 |
+| All six tools (first setup) | 1 | +47.9% | +54.7% | +13.5% | 5/5 |
+
+Baseline (plain Claude Code): $0.395, 536k tokens, peak 33.5k per session. Method, the
+cost-vs-tokens explanation and the limits of these results are in [RESULTS.md](RESULTS.md).
+
+</details>
+
+---
+
+## 🧩 What's in the stack
+
+| Tool | What it does | Measured | Installed |
+|---|---|---|:-:|
+| **[Headroom](https://github.com/headroomlabs-ai/headroom)** | Local proxy: compresses tool results, logs and JSON, and loads tool definitions only when needed | −21% alone, the core | ✅ default |
+| **[RTK](https://github.com/rtk-ai/rtk)** | Hook that shortens shell command output (`git`, tests, `grep`…) before Claude reads it | −9% alone | ✅ default |
+| **[Ponytail](https://github.com/DietrichGebert/ponytail)** | Plugin that pushes Claude toward the simplest code that works | −4% on top | ✅ default |
+| **[pxpipe](https://github.com/teamchong/pxpipe)** | Proxy that turns bulky context into images | after the default stack: context −53%, but cost −9% instead of −25% | `--with-pxpipe` |
+| **[code-review-graph](https://github.com/tirth8205/code-review-graph)** | Code graph served to Claude over MCP | +10% on our repo | `--with-crg` |
+| **[Caveman](https://github.com/JuliusBrussee/caveman)** | Plugin that makes Claude's replies terse | +17% to +30% when added | `--with-caveman` |
+
+---
+
+## 🔧 How it works
+
+```
+                 ┌──────────────────────────────────────────────┐
+                 │ Claude Code                                  │
+                 │   RTK hook ……… shortens shell output         │
+                 │   Ponytail ……… less code to write            │
+                 └──────────────────────┬───────────────────────┘
+                                        │ ANTHROPIC_BASE_URL
+                                        ▼
+                 ┌──────────────────────────────────────────────┐
+                 │ Headroom  (127.0.0.1:8787)                   │
+                 │   compresses tool results, defers tools      │
+                 └──────────────────────┬───────────────────────┘
+                                        │
+             optional, long sessions:   │   pxpipe (127.0.0.1:47821)
+             TOKEN_STACK_PROXIES=       │   reached through `pxpipe warp`
+             headroom,pxpipe            │
+                                        ▼
+                                 Anthropic API
+```
+
+`token-stack` wires this the way that measured best. Three settings made the difference
+between saving and losing money:
+
+| | Wrong | Right (what `token-stack` does) | Effect |
+|:-:|---|---|---|
+| 1 | `ENABLE_TOOL_SEARCH=true` with Headroom, as `headroom wrap claude` sets | Leave it unset: Headroom then defers tool definitions itself, far more than Claude Code does | Headroom −11% → **−21%** |
+| 2 | Point Headroom at pxpipe with `--anthropic-api-url` | Run Headroom inside `pxpipe warp`, so it still sees `api.anthropic.com` | pxpipe after Headroom +24% → **about even** |
+| 3 | pxpipe alone without tool deferral | `ENABLE_TOOL_SEARCH=true` when there is no Headroom | pxpipe −2% → **−7%** |
+
+---
+
+## 🚀 Daily use
+
+```bash
+token-stack claude                                    # Claude Code through Headroom
+TOKEN_STACK_PROXIES=headroom,pxpipe token-stack claude  # very long sessions: half the context, ~+20% cost
+token-stack status                                    # are the proxies running?
+token-stack stop                                      # stop them
+```
+
+<details>
+<summary><b>All <code>token-stack</code> commands and settings</b></summary>
+
+| Command | Does |
+|---|---|
+| `token-stack claude [args]` | Starts the proxies if needed, then runs `claude [args]` through them |
+| `token-stack start` | Starts the proxies in the background |
+| `token-stack stop` | Stops the proxies it started |
+| `token-stack status` | Shows whether each proxy answers |
+| `token-stack url` | Prints the address Claude Code should use as `ANTHROPIC_BASE_URL` |
+| `token-stack graph [repo]` | Sets up code-review-graph in a git repo and builds its graph (needs `--with-crg`) |
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `TOKEN_STACK_PROXIES` | `headroom` | Proxies in chain order: `headroom`, `headroom,pxpipe`, `pxpipe,headroom`, `pxpipe` or `none` |
+| `TOKEN_STACK_HEADROOM_PORT` | `8787` | Headroom port |
+| `TOKEN_STACK_PXPIPE_PORT` | `47821` | pxpipe port |
+| `TOKEN_STACK_STATE_DIR` | `~/.local/state/token-stack` | PID files and proxy logs |
+
+</details>
+
+> [!NOTE]
+> With any proxy set as `ANTHROPIC_BASE_URL`, Claude Code's Remote Control is unavailable.
+> Run plain `claude` when you need it.
+
+---
+
+## 📦 Installation
+
+**Requirements:** Linux, macOS or WSL · Python 3.10+ with venv · Node.js 20.19+ (for pxpipe
+and the benchmark) · Claude Code · `curl` · `sudo` for the system-wide parts.
+
+```bash
+./install.sh                    # best combination: RTK + Ponytail + Headroom
+./install.sh --with-pxpipe      # + pxpipe, for long sessions
+./install.sh --help             # all options
+```
+
+| Option | Adds |
+|---|---|
+| *(none)* | RTK, Headroom, Ponytail and `token-stack`; disables Caveman if an earlier install enabled it |
+| `--with-pxpipe` | pxpipe 0.15.0 (pinned: it sees every request) |
+| `--with-crg` | code-review-graph 2.3.9, set up per repo with `token-stack graph` |
+| `--with-caveman` | Caveman, enabled (not recommended) |
+| `--benchmark-tools` | pxpipe, code-review-graph, and Caveman installed but disabled |
+
+<details>
+<summary><b>Where things go</b></summary>
+
+| What | Where |
+|---|---|
+| RTK | `~/.local/bin/rtk`, copied to `/usr/local/bin/rtk`; hook in `~/.claude/settings.json`, instructions in `~/.claude/RTK.md` |
+| Headroom | Python venv in `/opt/headroom`, linked as `/usr/local/bin/headroom` |
+| Ponytail, Caveman | Claude Code plugins, user scope (`claude plugin list`) |
+| pxpipe | global npm package `pxpipe-proxy` |
+| code-review-graph | Python venv in `/opt/code-review-graph`, linked in `/usr/local/bin`; per-repo files from `token-stack graph` |
+| `token-stack` | `/usr/local/bin/token-stack` |
+
+Re-run `./install.sh` after pulling changes: it skips what is already installed and updates
+the launcher.
+
+</details>
+
+**Uninstall:** `./uninstall.sh` asks before each removal (`--dry-run` to preview, `--yes` to
+skip the questions). It prints the few manual steps left (RTK's lines in `~/.claude`).
+
+---
+
+## 🔬 Benchmark
+
+Real Claude Code sessions, every combination of tools against plain Claude Code. Each session
+is 7 requests in a row on a generated repository (find why CI is red, fix it, find a 503 in the
+logs, find a commit, add a regression test…), with graded answers. Every configuration ignores
+your own settings, so only its tools differ.
+
+```bash
+benchmark/install.sh                                  # the tools it compares + the Agent SDK
+cd benchmark
+node run_session.mjs                                  # checks only, no model calls
+node run_session.mjs --live                           # plain Claude Code vs the default install
+node run_session.mjs --live --arms best --repeat 2    # the best configurations, twice each
+```
+
+| Preset | Configurations |
+|---|---|
+| `default` | plain Claude Code, RTK + Ponytail + Headroom |
+| `best` | plain Claude Code and the best 6, with and without pxpipe after Headroom |
+| `ablation` | plain Claude Code, RTK + Caveman + Ponytail, + code-review-graph, everything |
+| `all` | every configuration defined in [`harness.mjs`](benchmark/harness.mjs) |
+
+Sessions run on your logged-in Claude account: about **$0.30–0.45 each** in our runs. Reports
+go to `benchmark/reports/session-latest.md`, and `--add-to <run>/combined-results.json` merges
+a new run into an earlier report. `run_ab.mjs` is a quicker variant with one question per
+session.
+
+---
+
+## 🔒 Privacy and data
+
+Everything runs on your machine; requests still go only to Anthropic.
+
+- **Headroom** runs with telemetry forced off (`--no-telemetry`).
+- **RTK** telemetry is opt-in and off unless you enable it (`rtk telemetry status`).
+- **Ponytail** hooks run locally; its optional webhook is empty by default.
+- **pxpipe** (optional) sends its images to Anthropic only. Its `warp` mode creates a local
+  certificate authority in `~/.pxpipe`, trusted by the Headroom process only.
+- **code-review-graph** (optional) is installed without embedding extras, so no code leaves
+  the machine.
+- The **Caveman npm CLI** is never installed: it adds its own proxy and sends telemetry by
+  default.
+
+---
+
+## 🤝 Other agents and SDKs
+
+Only Claude Code was benchmarked. Headroom and RTK also work with other agents.
+
+<details>
+<summary><b>GitHub Copilot CLI</b></summary>
+
+```bash
 ./install.sh
+./scripts/launch-copilot.sh        # or: headroom wrap copilot
+headroom wrap copilot -- --model <model>
 ```
 
-What the installer does:
+Headroom selects the Anthropic or OpenAI-compatible route automatically.
 
-1. Installs **RTK** (shell output filter)
-2. Installs **Headroom** (context compressor + proxy)
-3. Installs **Caveman** (short-answer skill / CLI)
-4. Runs `rtk init -g` so hooks are active
+</details>
 
-Then launch:
+<details>
+<summary><b>Other agents</b></summary>
+
+| Agent / Client | RTK | Headroom | How |
+|---|:-:|:-:|---|
+| Claude Code | ✅ | ✅ | `token-stack claude` (benchmarked) |
+| GitHub Copilot CLI | ✅ | ✅ | `headroom wrap copilot` |
+| Cursor | ✅ | ✅ | config snippet or proxy |
+| OpenAI Codex CLI | ✅ | ✅ | `headroom wrap codex` |
+| Gemini CLI | ✅ | ✅ | supported |
+| Aider | ✅ | ✅ | `headroom wrap aider` |
+| Any OpenAI-compatible client | – | ✅ | `OPENAI_BASE_URL` → proxy |
+| Anthropic API / SDK | – | ✅ | direct or via proxy |
+
+Ponytail has plugins for other agents too: see its repository.
+
+</details>
+
+<details>
+<summary><b>TypeScript / JavaScript SDK</b></summary>
 
 ```bash
-./scripts/launch-claude.sh      # Claude Code via Headroom
-# or
-./scripts/launch-copilot.sh     # GitHub Copilot CLI via Headroom
+npm install headroom-ai @anthropic-ai/sdk   # or: openai
+token-stack start                           # the TS client needs the proxy running
 ```
-
----
-
-## Benchmarks (real published measurements)
-
-The authoritative numbers for this stack are **published** benchmarks from Headroom, RTK and Caveman (official + independent), not a local simulation.
-
-→ Full tables, sources and how to reproduce **on your machine**:  
-**[`benchmark/REAL_WORLD.md`](benchmark/REAL_WORLD.md)**
-
-### Quick summary
-
-| Tool | What it compresses | Realistic band |
-|------|--------------------|----------------|
-| **RTK** | Shell command outputs | **60–90 %** on those outputs; **~5–25 %** of full session input |
-| **Headroom** | Context / tool results sent to the LLM | **15–45 %** typical coding day; **40–80 %** tool-heavy; peaks **60–95 %** on JSON/logs |
-| **Caveman** | Model *output* prose | **~30–65 %** of output on chat; **~5–15 %** of output (small total impact) on coding agents |
-
-**Headline independent / official anchors**
-
-| Source | Result |
-|--------|--------|
-| Headroom official workloads | Code search / SRE debug **~92 %**; exploration **~47 %** |
-| Headroom E2E agent bench (50 cases) | **−44 %** input tokens, **−37 %** cost |
-| RTK typical command table | Session-style mix **~70–80 %** on command outputs |
-| RTK real Rust project (14 cmds) | **−65.7 %** on those outputs |
-| Caveman official (10 chat tasks) | **~65 %** output tokens |
-| Caveman JetBrains coding agent (86 tasks) | **~8.5 %** output tokens |
-
-### Replay the same scenarios with *your* full stack
-
-Fixtures live in `benchmark/fixtures/`. The harness uses **real Headroom** when installed:
-
-```bash
-./install.sh
-pip install "headroom-ai[proxy]"   # if not already
-python3 benchmark/run_benchmark.py
-python3 benchmark/run_benchmark.py --json
-python3 benchmark/run_benchmark.py --report benchmark/reports/my-stack.md
-```
-
-The header shows `Headroom (real compress): YES` when `from headroom import compress` works.  
-Compare your report to the tables in [`benchmark/REAL_WORLD.md`](benchmark/REAL_WORLD.md).
-
-Live session metrics (after real agent use):
-
-```bash
-rtk gain
-# ~/.headroom/logs/proxy.log
-```
-
-## The Three Tools
-
-### 1. RTK — Rust Token Killer
-
-**What it does**  
-Sits between your coding agent and the shell. When the agent runs a command (`git status`, `npm test`, `cargo build`, `find`, `grep`…), RTK intercepts the output, removes noise (progress bars, boilerplate, repeated lines…), groups similar items and returns a compact version.
-
-**Typical savings**  
-- `git diff` / large status → 70–92 %  
-- Test / build logs → 60–90 %  
-- Search / find results → 50–80 %
-
-**Key points**
-- Written in Rust, zero runtime dependencies
-- Transparent: you keep typing normal commands
-- Global or per-project hooks for Claude Code, Copilot CLI, Cursor, Codex, Gemini CLI…
-- Tracks savings with `rtk gain`
-
-**Links**  
-- https://github.com/rtk-ai/rtk  
-- https://www.rtk-ai.app
-
----
-
-### 2. Caveman
-
-**What it does**  
-System-prompt / skill / plugin that forces the model to answer in ultra-short “caveman speak”:
-
-- No greetings, no “Sure!”, no preambles  
-- No filler words  
-- Fragments preferred  
-- Code blocks stay 100 % intact  
-
-**Typical savings**  
-30–65 % of *output* tokens.
-
-**Key points**
-- Works with Claude Code, GitHub Copilot, Codex, Gemini CLI, OpenCode, Claude.ai…
-- Intensity levels: lite / full / ultra
-- Reversible (`stop caveman` or uninstall)
-
-**Links**  
-- https://github.com/JuliusBrussee/caveman  
-- `npx @caveman-ai/cli@latest`
-
----
-
-### 3. Headroom
-
-**What it does**  
-Local proxy + compression engine between your client and the LLM provider (Anthropic, OpenAI / Copilot, Gemini, Bedrock, OpenRouter…).
-
-- Compresses large tool outputs, JSON, logs, code, search results  
-- Local cache of originals (CCR – Compress-Cache-Retrieve)  
-- Model can retrieve full text if needed  
-- Preserves provider caching headers when possible  
-
-**Typical savings**  
-25–95 % of *input* tokens (heavy tool use = higher savings).
-
-**Key points**
-- Zero code changes as a proxy  
-- Subscription logins (Claude Pro/Max, Copilot) **and** API keys  
-- TypeScript & Python SDKs  
-- MCP tools for on-demand compress / retrieve / stats  
-
-**Links**  
-- https://github.com/headroomlabs-ai/headroom  
-- Docs: https://headroom-docs.vercel.app
-
----
-
-## How They Work Together
-
-| Layer             | Tool         | Acts on                     | Savings type  |
-|-------------------|--------------|-----------------------------|---------------|
-| Shell / tools     | **RTK**      | Command *output*            | Input tokens  |
-| Network / context | **Headroom** | Everything sent to the LLM  | Input tokens  |
-| Model replies     | **Caveman**  | Model *output*              | Output tokens |
-
-```
-Your Agent (Claude Code / Copilot CLI / …)
-        │
-        ▼
-   ┌─────────┐
-   │   RTK   │  ← cleans shell outputs
-   └────┬────┘
-        │
-        ▼
-   ┌─────────┐
-   │ Headroom│  ← compresses the whole request
-   └────┬────┘
-        │
-        ▼
-   LLM Provider (Anthropic / OpenAI / Copilot / …)
-        │
-        ▼
-   ┌─────────┐
-   │ Caveman │  ← forces short answers
-   └─────────┘
-```
-
----
-
-## Supported Agents & Providers
-
-| Agent / Client          | RTK | Headroom | Caveman | Notes |
-|-------------------------|-----|----------|---------|-------|
-| **Claude Code**         | ✅  | ✅       | ✅      | `headroom wrap claude` |
-| **GitHub Copilot CLI**  | ✅  | ✅       | ✅      | `headroom wrap copilot` |
-| Cursor                  | ✅  | ✅       | ✅      | Config snippet or proxy |
-| OpenAI Codex CLI        | ✅  | ✅       | ✅      | `headroom wrap codex` |
-| Gemini CLI              | ✅  | ✅       | ✅      | Supported |
-| Aider                   | ✅  | ✅       | ✅      | `headroom wrap aider` |
-| Any OpenAI-compatible   | –   | ✅       | –       | `OPENAI_BASE_URL` → proxy |
-| Anthropic API / SDK     | –   | ✅       | optional| Direct or via proxy |
-
----
-
-## Quick Start – Claude Code
-
-Works with **Claude Pro / Max subscription** (OAuth) or an Anthropic API key.
-
-```bash
-./install.sh
-./scripts/launch-claude.sh
-```
-
-Manual equivalent:
-
-```bash
-# Terminal 1
-headroom proxy --port 8787
-
-# Terminal 2
-export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
-claude
-```
-
-Or simply:
-
-```bash
-headroom wrap claude
-```
-
----
-
-## Quick Start – GitHub Copilot CLI
-
-Works with your GitHub Copilot subscription.
-
-```bash
-./install.sh
-./scripts/launch-copilot.sh
-```
-
-Or:
-
-```bash
-headroom wrap copilot
-# optional:
-# headroom wrap copilot -- --model claude-sonnet-4-20250514
-```
-
-Headroom selects the correct Anthropic or OpenAI-compatible route automatically.
-
----
-
-## TypeScript / JavaScript SDK
-
-```bash
-npm install headroom-ai
-# + provider SDK
-npm install @anthropic-ai/sdk
-# or
-npm install openai
-```
-
-Start the proxy (required for the TS client):
-
-```bash
-headroom proxy --port 8787
-```
-
-### Anthropic
 
 ```ts
+// Anthropic
 import { withHeadroom } from 'headroom-ai/anthropic';
 import Anthropic from '@anthropic-ai/sdk';
 
 const client = withHeadroom(new Anthropic());
-
 const response = await client.messages.create({
-  model: 'claude-sonnet-4-5-20250929',
+  model: 'claude-opus-5-5',
   max_tokens: 1024,
   messages: [/* … */],
 });
 ```
 
-### OpenAI / Copilot-compatible
-
 ```ts
+// OpenAI-compatible, or compress first and call any client
 import { compress } from 'headroom-ai';
 import OpenAI from 'openai';
 
-const client = new OpenAI({
-  baseURL: 'http://127.0.0.1:8787/v1',
-});
-
-// or compress messages first then call any client
-const result = await compress(messages, { model: 'gpt-4o' });
-```
-
-### Stand-alone compress (provider-agnostic)
-
-```ts
-import { compress } from 'headroom-ai';
-
-const result = await compress(messages, {
-  model: 'claude-sonnet-4-5-20250929',
-});
+const client = new OpenAI({ baseURL: 'http://127.0.0.1:8787/v1' });
+const result = await compress(messages, { model: 'claude-opus-5-5' });
 console.log(result.tokensSaved, result.compressionRatio);
 ```
 
----
+</details>
 
-## Direct API Usage
-
-### Python
+<details>
+<summary><b>Python, or any language through the proxy</b></summary>
 
 ```python
 from headroom import compress
 
-compressed = compress(messages, model="claude-sonnet-4-5-20250929")
-# or model="gpt-4o"
+compressed = compress(messages, model="claude-opus-5-5")
 # then pass compressed.messages to your client
 ```
 
-### Via the proxy (any language)
-
 ```bash
-headroom proxy --port 8787
-
-export ANTHROPIC_BASE_URL=http://127.0.0.1:8787   # Anthropic-style
+token-stack start
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8787     # Anthropic-style
 export OPENAI_BASE_URL=http://127.0.0.1:8787/v1     # OpenAI-compatible
 ```
 
-See `configs/env.example` for a ready template.
+`configs/env.example` is a ready template.
+
+</details>
 
 ---
 
-## Verification & Monitoring
+## 🩺 Monitoring and troubleshooting
 
-| Command / Location                   | What it shows                     |
-|--------------------------------------|-----------------------------------|
-| `python3 benchmark/run_benchmark.py` | Multi-scenario with/without comparison |
-| `rtk gain`                           | RTK savings history               |
-| `rtk gain --daily`                   | Daily breakdown                   |
-| `~/.headroom/logs/proxy.log`         | Headroom compression lines        |
-| `headroom_stats` (MCP)               | Live session stats                |
+| Command | Shows |
+|---|---|
+| `token-stack status` | whether Headroom (and pxpipe) are running |
+| `curl -s 127.0.0.1:8787/stats` | Headroom's own counters |
+| `rtk gain` · `rtk gain --daily` | RTK's savings history |
+| `pxpipe stats` | pxpipe's own counters (if used) |
+| `~/.local/state/token-stack/*.log` | proxy logs when started by `token-stack` |
 
-Example Headroom log:
+> [!TIP]
+> Each tool counts against the request it receives, after the other tools changed it, so the
+> counters overstate what you save. Only the benchmark compares with plain Claude Code.
 
-```
-Pipeline complete: 48200 → 11300 tokens (saved 36900, 76.5 % reduction)
-```
+<details>
+<summary><b>Troubleshooting</b></summary>
 
-Optional MCP tools:
+| Problem | Fix |
+|---|---|
+| Headroom saves less than expected | Unset `ENABLE_TOOL_SEARCH` in your shell; use `token-stack claude`, not `headroom wrap claude` |
+| pxpipe after Headroom saves nothing | Start the chain with `token-stack`; never point Headroom at pxpipe with `--anthropic-api-url` |
+| Port 8787 already in use | `TOKEN_STACK_HEADROOM_PORT=8788 token-stack claude` |
+| Remote Control unavailable | Expected with any proxy; run plain `claude` when you need it |
+| Claude 1M context lost behind the proxy | Known Claude Code behaviour with a custom base URL; check Headroom's issues |
+| RTK not intercepting | `rtk init -g`, then restart Claude Code |
+| `pip` reports a hash mismatch for litellm | The download was cut off; re-run `./install.sh` (it resumes and verifies) |
+| Benchmark preflight fails | Run `benchmark/install.sh` |
+| Auth or subscription errors | Headroom forwards your credentials unchanged; check it is the only proxy in the way |
 
-```bash
-headroom mcp install
-```
-
----
-
-## Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| Agent ignores Headroom | Prefer `headroom wrap <agent>` or the scripts in `scripts/` |
-| Claude 1 M context lost behind proxy | Known Claude Code behaviour with custom base URL; check Headroom issues |
-| RTK not intercepting | `rtk init -g` then restart the agent |
-| Caveman inactive | `/caveman` or reinstall CLI / plugin |
-| Benchmark shows “local approximation” | `pip install "headroom-ai[proxy]"` then re-run |
-| TypeScript SDK fails | Ensure `headroom proxy` is running |
-| Copilot routing | Use `headroom wrap copilot` (auto route selection) |
-| Auth / subscription broken | Headroom forwards tokens unchanged — verify proxy is the only intermediary |
+</details>
 
 ---
 
-## Repository layout
+## 📁 Repository layout
 
 ```
 .
 ├── README.md
-├── LICENSE
-├── .gitignore
-├── install.sh
-├── scripts/
-│   ├── launch-claude.sh
-│   └── launch-copilot.sh
-├── configs/
-│   └── env.example
+├── RESULTS.md              what we measured, and the conclusions
+├── install.sh              best combination by default; --with-* for the others
+├── uninstall.sh
+├── token-stack             launcher: proxies + Claude Code (installed in /usr/local/bin)
+├── scripts/                launch-claude.sh (token-stack claude), launch-copilot.sh
+├── configs/                env.example
 └── benchmark/
-    ├── REAL_WORLD.md          # authoritative published benchmarks + sources
-    ├── run_benchmark.py       # optional local demo only (not authoritative)
-    ├── reports/
-    ├── fixtures/
-    └── scenarios/
+    ├── install.sh          the tools it compares + the Agent SDK
+    ├── run_session.mjs     work-session benchmark (7 requests per session)
+    ├── run_ab.mjs          quick benchmark (one question per session)
+    ├── harness.mjs         configurations, proxies, token accounting
+    ├── fixture_repo.mjs    the generated repository and the graders
+    ├── reports/            session-latest.md, ab-latest.md, runs/
+    ├── REAL_WORLD.md       older: figures published by the tools' authors
+    └── run_benchmark.py    older offline demo, superseded by run_session.mjs
 ```
 
 ---
 
-## Licence & Credits
+## 📜 Credits and licence
 
 This repository (docs, scripts, benchmark) is released under the **MIT** licence.
 
-Third-party tools:
+| Tool | Licence | Repository |
+|---|---|---|
+| Headroom | Apache 2.0 | [headroomlabs-ai/headroom](https://github.com/headroomlabs-ai/headroom) |
+| RTK | Apache 2.0 | [rtk-ai/rtk](https://github.com/rtk-ai/rtk) |
+| Ponytail | MIT | [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) |
+| pxpipe | MIT | [teamchong/pxpipe](https://github.com/teamchong/pxpipe) |
+| code-review-graph | MIT | [tirth8205/code-review-graph](https://github.com/tirth8205/code-review-graph) |
+| Caveman | MIT | [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) |
 
-- **RTK** — Apache 2.0 — [rtk-ai/rtk](https://github.com/rtk-ai/rtk)
-- **Caveman** — MIT — [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman)
-- **Headroom** — Apache 2.0 — [headroomlabs-ai/headroom](https://github.com/headroomlabs-ai/headroom)
-
-Always refer to the official repositories for the latest flags and breaking changes.
-
----
-
-*Happy token hunting — works with Claude, Copilot and beyond.*
+Always check the official repositories for the latest flags and breaking changes.
