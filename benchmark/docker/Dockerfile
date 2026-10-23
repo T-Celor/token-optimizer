@@ -80,7 +80,7 @@ RUN sed -i 's/\r$//' install.sh uninstall.sh token-stack benchmark/install.sh \
  && mkdir -p benchmark/reports
 
 # benchmark/install.sh runs ../install.sh --benchmark-tools itself (RTK, Headroom, Ponytail,
-# pxpipe, code-review-graph, Caveman disabled, token-stack) and then npm ci for the benchmark.
+# pxpipe, code-review-graph, token-stack) and then npm ci for the benchmark.
 # Running ./install.sh first would only repeat that work.
 # Plugin installs that need a logged-in Claude only warn here; run.sh post-login retries them.
 RUN ./benchmark/install.sh
