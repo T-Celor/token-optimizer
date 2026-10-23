@@ -23,7 +23,7 @@ Other commands:
 - `sync` copies edited `token-stack`, `scripts/` and `benchmark/*.mjs` into the running
   container, so you do not need to rebuild for script changes.
 - `post-login` re-runs the installer. Use it if the build could not install the Ponytail
-  or Caveman plugins, which need a logged-in Claude.
+  plugin, which needs a logged-in Claude.
 
 ## Login
 
