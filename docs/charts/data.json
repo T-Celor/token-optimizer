@@ -1,0 +1,53 @@
+{
+  "source": "Plain Claude Code = baseline. Opus 5.5. Source: README.md, Results",
+  "pxpipe-gain-by-context": {
+    "title": "Adding pxpipe after RTK + Ponytail + Headroom: cost change by session size",
+    "subtitle": "pxpipe saves money only when the context is large. One session per scenario.",
+    "desc": "Diverging bar chart of the cost change when pxpipe is added after RTK, Ponytail and Headroom. Workday (7 requests, baseline peak 26k tokens): +18.0%. Long (18 requests, baseline peak 47k): -5.3%. XL (29 requests, baseline peak 303k): -27.2%.",
+    "items": [
+      { "name": "Workday, 7 requests", "detail": "Baseline peak 26k tokens. Cost $0.2786 -> $0.3286", "pct": 18.0 },
+      { "name": "Long, 18 requests", "detail": "Baseline peak 47k tokens. Cost $0.954 -> $0.903", "pct": -5.3 },
+      { "name": "XL, 29 requests", "detail": "Baseline peak 303k tokens. Cost $3.144 -> $2.288", "pct": -27.2 }
+    ]
+  },
+  "xl-near-limit": {
+    "title": "Near the context limit (29 requests): cost and peak context",
+    "subtitle": "Percentages compare each setup with plain Claude Code.",
+    "desc": "Two bar groups for the XL session. Cost per session: plain Claude Code $4.461, RTK + Ponytail + Headroom $3.144 (-29.5%), + pxpipe always $2.288 (-48.7%), router with gain policy $1.777 (-60.2%). Peak context: plain 303.2k tokens, RTK + Ponytail + Headroom 207.9k (-31.4%), + pxpipe always 65.5k (-78.4%), router 67.9k (-77.6%).",
+    "rows": [
+      { "name": "Plain Claude Code", "cost": 4.461, "peak": 303.2, "baseline": true },
+      { "name": "RTK + Ponytail + Headroom", "cost": 3.144, "costPct": -29.5, "peak": 207.9, "peakPct": -31.4 },
+      { "name": "+ pxpipe always", "cost": 2.288, "costPct": -48.7, "peak": 65.5, "peakPct": -78.4 },
+      { "name": "Router, gain policy", "cost": 1.777, "costPct": -60.2, "peak": 67.9, "peakPct": -77.6, "footnote": true }
+    ],
+    "footnote": "* Router: its session read fewer files in full (7 reads vs 22 to 24), so its cost is not yet separated from session variance."
+  },
+  "everyday": {
+    "title": "Everyday sessions (7 requests): cost per session, average of up to 3 sessions",
+    "subtitle": "Plain Claude Code is the baseline (highlighted). Sorted cheapest first.",
+    "desc": "Horizontal bars of average cost per 7-request session, sorted cheapest first. RTK + Ponytail + Headroom $0.297 (-24.9%) is cheapest; plain Claude Code $0.395 is the baseline; All six tools $0.584 (+47.9%) is most expensive.",
+    "items": [
+      { "name": "RTK + Ponytail + Headroom", "cost": 0.297, "pct": -24.9 },
+      { "name": "RTK + Headroom", "cost": 0.309, "pct": -21.8 },
+      { "name": "Headroom", "cost": 0.310, "pct": -21.4 },
+      { "name": "Headroom → pxpipe", "cost": 0.311, "pct": -21.3 },
+      { "name": "RTK + Ponytail + Headroom → pxpipe", "cost": 0.358, "pct": -9.3 },
+      { "name": "Plain Claude Code", "cost": 0.395, "baseline": true },
+      { "name": "code-review-graph", "cost": 0.435, "pct": 10.2 },
+      { "name": "RTK + Caveman + Ponytail", "cost": 0.444, "pct": 12.5 },
+      { "name": "All six tools", "cost": 0.584, "pct": 47.9 }
+    ]
+  },
+  "router-decisions": {
+    "title": "How the router decided, request by request (XL session)",
+    "subtitle": "Context size at each request. S is the estimated saving from the dry run (k tokens).",
+    "desc": "Line chart of context size in thousands of tokens against request index 0 to 76, rising from 20.0k to 68.4k. Shaded zones: below 40k the router goes direct with no analysis; 40k to 100k it runs a dry run and switches only if the saving pays back within 20 requests. Dry-run savings S are annotated at requests 47 to 76, ending at 37.4k when it switched to pxpipe.",
+    "window": 200,
+    "zoneLow": 40,
+    "zoneHigh": 100,
+    "points": [[0, 20.0], [47, 41.2], [51, 46.1], [56, 52.4], [61, 57.8], [66, 63.1], [71, 66.9], [76, 68.4]],
+    "savings": [[47, 12.6], [51, 21.2], [56, 22.2], [61, 23.0], [66, 23.6], [71, 24.0], [76, 37.4]],
+    "switchedAt": 76,
+    "note": "Calibrated estimate stayed within about 1% of the real size Anthropic reported."
+  }
+}

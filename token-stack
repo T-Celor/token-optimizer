@@ -1,0 +1,230 @@
+#!/usr/bin/env bash
+# token-stack: runs the stack's proxies and Claude Code through them. By default that is the
+# router chain (gate,headroom,gate,pxpipe, gain policy) when pxpipe and Node are installed,
+# else Headroom alone (Claude Code -> Headroom -> Anthropic). TOKEN_STACK_PROXIES picks another
+# chain (RESULTS.md has the measurements). RTK and Ponytail need no process of their own: they are a Claude Code hook and
+# a plugin, active in every session. code-review-graph (optional) is set up per repository,
+# once, with `token-stack graph`.
+#
+# Usage: token-stack start | stop | status | url | claude [claude args...] | graph [repo]
+#   url prints the address Claude Code should use as ANTHROPIC_BASE_URL (empty for none)
+#
+# Environment:
+#   TOKEN_STACK_PROXIES        which proxies to run, in chain order (Claude Code talks to the
+#                              first): gate,headroom,gate,pxpipe (default when pxpipe and node are
+#                              installed), headroom (default otherwise), headroom,pxpipe,
+#                              headroom,gate,pxpipe, pxpipe,headroom, pxpipe, or none
+#   TOKEN_STACK_HEADROOM_PORT  Headroom port (default 8787)
+#   TOKEN_STACK_PXPIPE_PORT    pxpipe port (default 47821)
+#   TOKEN_STACK_GATE_PORT      context gate port (default 47830)
+#   TOKEN_STACK_GATE_FRONT_PORT  gate,headroom,gate,pxpipe only: the gate's front port (default 47831).
+#                              Claude Code -> gate front -> Headroom -> gate back -> pxpipe or Anthropic
+#   TOKEN_STACK_GATE_MIN_TOKENS  context size from which the gate uses pxpipe (default 60000)
+#   TOKEN_STACK_GATE_SCRIPT    context-gate.mjs (default: the installed copy, else scripts/ here)
+#   TOKEN_STACK_GATE_LOG       gate event log, JSONL (default: none)
+#   TOKEN_STACK_GATE_POLICY    gate policy, threshold or gain (default: gain with the default chain,
+#                              threshold when TOKEN_STACK_PROXIES is set)
+#   TOKEN_STACK_GATE_WINDOW    context window size in tokens for the gain policy (default: the gate's own, 200000)
+#   TOKEN_STACK_GATE_HORIZON   requests the gain policy amortizes the cache rewrite over (default: the gate's own, 20)
+#   TOKEN_STACK_STATE_DIR      pid files and logs (default ~/.local/state/token-stack)
+#   PXPIPE_LOG                 pxpipe event log (default ~/.pxpipe/events.jsonl)
+
+set -euo pipefail
+
+HEADROOM_PORT="${TOKEN_STACK_HEADROOM_PORT:-8787}"
+PXPIPE_PORT="${TOKEN_STACK_PXPIPE_PORT:-47821}"
+GATE_PORT="${TOKEN_STACK_GATE_PORT:-47830}"
+GATE_FRONT_PORT="${TOKEN_STACK_GATE_FRONT_PORT:-47831}"
+GATE_MIN_TOKENS="${TOKEN_STACK_GATE_MIN_TOKENS:-60000}"
+GATE_SCRIPT="${TOKEN_STACK_GATE_SCRIPT:-}"
+STATE_DIR="${TOKEN_STACK_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/token-stack}"
+HEADROOM_URL="http://127.0.0.1:$HEADROOM_PORT"
+PXPIPE_URL="http://127.0.0.1:$PXPIPE_PORT"
+GATE_URL="http://127.0.0.1:$GATE_PORT"
+GATE_FRONT_URL="http://127.0.0.1:$GATE_FRONT_PORT"
+
+# The context gate script: TOKEN_STACK_GATE_SCRIPT, else the installed copy, else scripts/ next to this file.
+gate_script_path() {
+  local script="$GATE_SCRIPT"
+  if [ -z "$script" ]; then
+    script=/usr/local/lib/token-stack/context-gate.mjs
+    [ -f "$script" ] || script="$(dirname "$(readlink -f "$0")")/scripts/context-gate.mjs"
+  fi
+  echo "$script"
+}
+
+# Default chain: the router when pxpipe and node are installed, else Headroom alone. Setting
+# TOKEN_STACK_PROXIES keeps the threshold policy.
+if [ -n "${TOKEN_STACK_PROXIES:-}" ]; then
+  PROXIES="$TOKEN_STACK_PROXIES"
+  DEFAULT_GATE_POLICY=threshold
+elif command -v pxpipe >/dev/null && command -v node >/dev/null && [ -f "$(gate_script_path)" ]; then
+  PROXIES=gate,headroom,gate,pxpipe
+  DEFAULT_GATE_POLICY=gain
+else
+  PROXIES=headroom
+  DEFAULT_GATE_POLICY=threshold
+fi
+GATE_POLICY="${TOKEN_STACK_GATE_POLICY:-$DEFAULT_GATE_POLICY}"
+
+case "$PROXIES" in
+  headroom,pxpipe | headroom,gate,pxpipe | gate,headroom,gate,pxpipe | pxpipe,headroom | headroom | pxpipe | none) ;;
+  *) echo "TOKEN_STACK_PROXIES must be headroom,pxpipe, headroom,gate,pxpipe, gate,headroom,gate,pxpipe, pxpipe,headroom, headroom, pxpipe or none (got: $PROXIES)" >&2; exit 2 ;;
+esac
+uses() { [[ ",$PROXIES," == *",$1,"* ]]; }
+
+# Where Claude Code sends its requests: the first proxy of the chain, or nothing.
+entry_url() {
+  case "${PROXIES%%,*}" in
+    headroom) echo "$HEADROOM_URL" ;;
+    pxpipe) echo "$PXPIPE_URL" ;;
+    gate) echo "$GATE_FRONT_URL" ;;
+  esac
+}
+
+# Any HTTP answer means the server is up.
+up() { curl -s -o /dev/null -m 2 "$1"; }
+
+# start_one <name> <url to poll> <command...>: start in the background, wait until it answers.
+start_one() {
+  local name="$1" url="$2"
+  shift 2
+  if up "$url"; then
+    echo "[token-stack] $name already running on $url (not started by this command)"
+    return 0
+  fi
+  nohup "$@" >"$STATE_DIR/$name.log" 2>&1 &
+  echo $! >"$STATE_DIR/$name.pid"
+  # Headroom loads its compression models at startup, so allow up to two minutes.
+  for _ in $(seq 1 240); do
+    if up "$url"; then
+      echo "[token-stack] $name up on $url"
+      return 0
+    fi
+    kill -0 "$(cat "$STATE_DIR/$name.pid")" 2>/dev/null || break
+    sleep 0.5
+  done
+  echo "[token-stack] $name failed to start, see $STATE_DIR/$name.log" >&2
+  return 1
+}
+
+# Stops only processes this script started (tracked by pid file).
+stop_one() {
+  local pidfile="$STATE_DIR/$1.pid"
+  [ -f "$pidfile" ] || return 0
+  kill "$(cat "$pidfile")" 2>/dev/null && echo "[token-stack] stopped $1"
+  rm -f "$pidfile"
+}
+
+# start_pxpipe [upstream base URL]: forwards to api.anthropic.com unless given another proxy.
+start_pxpipe() {
+  command -v pxpipe >/dev/null || { echo "pxpipe not found. Run install.sh." >&2; exit 1; }
+  local env_args=(PORT="$PXPIPE_PORT")
+  [ -n "${1:-}" ] && env_args+=(ANTHROPIC_UPSTREAM="$1")
+  start_one pxpipe "$PXPIPE_URL/" env "${env_args[@]}" pxpipe
+}
+
+# start_gate: the context gate (scripts/context-gate.mjs, Node, no deps). It sends each
+# /v1/messages request to pxpipe only when the context is at least GATE_MIN_TOKENS, else to
+# Anthropic directly. It is looked up in /usr/local/lib/token-stack (install.sh), else next to
+# this script. "start_gate front" also starts the front stage on GATE_FRONT_PORT, which forwards
+# to Headroom (gate,headroom,gate,pxpipe). Both stages run in one process; it only forwards, so
+# it may start before Headroom is up.
+start_gate() {
+  command -v node >/dev/null || { echo "node not found. Install Node 20+ and run install.sh." >&2; exit 1; }
+  local script
+  script="$(gate_script_path)"
+  [ -f "$script" ] || { echo "context-gate.mjs not found at $script. Run install.sh." >&2; exit 1; }
+  local env_args=(GATE_PORT="$GATE_PORT" GATE_MIN_TOKENS="$GATE_MIN_TOKENS" GATE_PXPIPE_UPSTREAM="$PXPIPE_URL")
+  [ -n "${TOKEN_STACK_GATE_LOG:-}" ] && env_args+=(GATE_LOG="$TOKEN_STACK_GATE_LOG")
+  env_args+=(GATE_POLICY="$GATE_POLICY")
+  [ -n "${TOKEN_STACK_GATE_WINDOW:-}" ] && env_args+=(GATE_WINDOW="$TOKEN_STACK_GATE_WINDOW")
+  [ -n "${TOKEN_STACK_GATE_HORIZON:-}" ] && env_args+=(GATE_HORIZON="$TOKEN_STACK_GATE_HORIZON")
+  [ "${1:-}" = front ] && env_args+=(GATE_FRONT_PORT="$GATE_FRONT_PORT" GATE_FRONT_UPSTREAM="$HEADROOM_URL")
+  start_one gate "$GATE_URL/livez" env "${env_args[@]}" node "$script"
+}
+
+# start_headroom [warp [port]]: Headroom forwards to api.anthropic.com. Telemetry is forced off.
+# With "warp", Headroom still targets api.anthropic.com but runs inside `pxpipe warp`, which
+# diverts its /v1/messages requests to pxpipe on $PXPIPE_PORT, or to the given port (the gate's
+# in the headroom,gate,pxpipe chain). Headroom so keeps treating its upstream as first-party
+# Anthropic, tool-search deferral included. Pointing it at pxpipe with --anthropic-api-url
+# instead makes it treat pxpipe as a third-party API and strip tool-search deferral from
+# every request.
+start_headroom() {
+  command -v headroom >/dev/null || { echo "headroom not found. Run install.sh." >&2; exit 1; }
+  local cmd=(headroom proxy --port "$HEADROOM_PORT" --no-telemetry)
+  [ "${1:-}" = warp ] && cmd=(env PORT="${2:-$PXPIPE_PORT}" pxpipe warp -- "${cmd[@]}")
+  start_one headroom "$HEADROOM_URL/livez" env HEADROOM_TELEMETRY=off "${cmd[@]}"
+}
+
+# Starts the proxy nearest Anthropic first, so each proxy's upstream is up before it.
+start() {
+  mkdir -p "$STATE_DIR"
+  case "$PROXIES" in
+    headroom,pxpipe) start_pxpipe && start_headroom warp ;;
+    headroom,gate,pxpipe) start_pxpipe && start_gate && start_headroom warp "$GATE_PORT" ;;
+    gate,headroom,gate,pxpipe) start_pxpipe && start_gate front && start_headroom warp "$GATE_PORT" ;;
+    pxpipe,headroom) start_headroom && start_pxpipe "$HEADROOM_URL" ;;
+    headroom) start_headroom ;;
+    pxpipe) start_pxpipe ;;
+    none) ;;
+  esac
+}
+
+# Sets up code-review-graph for Claude Code in a git repository (default: the current one)
+# and builds its graph. Writes .mcp.json, .claude/skills, .claude/settings.json (hooks),
+# a CLAUDE.md section, a .gitignore entry and a git pre-commit hook into the repo.
+graph() {
+  local repo
+  repo="$(git -C "${1:-.}" rev-parse --show-toplevel 2>/dev/null)" || { echo "${1:-.} is not in a git repository" >&2; exit 1; }
+  command -v code-review-graph >/dev/null || { echo "code-review-graph not found. Run install.sh." >&2; exit 1; }
+  # With uvx on PATH, code-review-graph would register `uvx code-review-graph serve`, which
+  # fetches the latest version from PyPI at every session start. Without it, the MCP server
+  # entry runs the pinned install under /opt instead.
+  PATH="/usr/local/bin:/usr/bin:/bin" code-review-graph install --platform claude-code --repo "$repo" --yes
+  code-review-graph build --repo "$repo"
+}
+
+status() {
+  uses headroom && { up "$HEADROOM_URL/livez" && echo "headroom: up ($HEADROOM_URL)" || echo "headroom: down"; }
+  uses gate && { up "$GATE_URL/livez" && echo "gate: up ($GATE_URL)" || echo "gate: down"; }
+  [ "${PROXIES%%,*}" = gate ] && { up "$GATE_FRONT_URL/livez" && echo "gate front: up ($GATE_FRONT_URL)" || echo "gate front: down"; }
+  uses pxpipe && { up "$PXPIPE_URL/" && echo "pxpipe: up ($PXPIPE_URL)" || echo "pxpipe: down"; }
+  [ "$PROXIES" = none ] && echo "no proxies configured (TOKEN_STACK_PROXIES=none)"
+  return 0
+}
+
+case "${1:-}" in
+  start) start ;;
+  stop)
+    stop_one headroom
+    stop_one gate
+    stop_one pxpipe
+    ;;
+  status) status ;;
+  url) entry_url ;;
+  claude)
+    shift
+    start
+    url="$(entry_url)"
+    if [ -n "$url" ] && uses headroom; then
+      # Claude Code turns its own tool-schema deferral off behind a custom ANTHROPIC_BASE_URL.
+      # Headroom then defers the schemas itself, and far more of them than Claude Code's own
+      # tool search does (it stands down when the client defers). So ENABLE_TOOL_SEARCH is
+      # left as you set it, unset by default.
+      ANTHROPIC_BASE_URL="$url" exec claude "$@"
+    elif [ -n "$url" ]; then
+      # pxpipe alone: nothing would defer the tool schemas, so keep Claude Code's deferral on
+      # unless you set ENABLE_TOOL_SEARCH yourself.
+      ANTHROPIC_BASE_URL="$url" ENABLE_TOOL_SEARCH="${ENABLE_TOOL_SEARCH:-true}" exec claude "$@"
+    else
+      exec claude "$@"
+    fi
+    ;;
+  graph) graph "${2:-.}" ;;
+  *)
+    sed -n '2,28p' "$0"
+    exit 2
+    ;;
+esac

@@ -1,0 +1,43 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Headroom / RTK local state (do not commit secrets or caches)
+.rtk/
+.headroom/
+*.log
+
+# Benchmark outputs
+benchmark/results/
+benchmark/*.json
+!benchmark/fixtures/**
+!benchmark/package.json
+!benchmark/package-lock.json
+
+# Misc
+.cache/
+tmp/
+
+# Benchmark run logs (transcripts); the *-latest.md reports are kept
+benchmark/reports/runs/
